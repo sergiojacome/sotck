@@ -15,7 +15,15 @@
     <div id="app" class="max-w-7xl mx-auto">
         <h1 class="text-2xl font-bold mb-6">Swing Autobot Trade Planner</h1>
 
-        <input type="file" @change="loadCSV" accept=".csv" class="mb-6">
+        <div class="mb-6 flex gap-4 items-center">
+            <input type="file" @change="loadCSV" accept=".csv" class="text-sm">
+            <button @click="loadSavedData" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+                Cargar datos guardados
+            </button>
+            <span v-if="lastUpdate" class="text-sm text-gray-500">
+                Última actualización: {{ lastUpdate }}
+            </span>
+        </div>
 
         <div v-if="plans.length">
             <table class="min-w-full rounded-lg overflow-hidden text-sm border border-gray-400">
@@ -124,7 +132,8 @@
                 return {
                     plans: [],
                     sortKey: 'score',
-                    sortDir: 'desc'
+                    sortDir: 'desc',
+                    lastUpdate: null
                 }
             },
             computed: {
@@ -145,6 +154,10 @@
                         return 0;
                     });
                 }
+            },
+            mounted() {
+                // Cargar datos guardados automáticamente al iniciar
+                this.loadSavedData();
             },
             methods: {
                 sortBy(key) {
@@ -174,6 +187,54 @@
                                 console.log('Cleaned row for symbol:', cleaned.Symbol, ':', cleaned);
                                 return this.calculatePlan(cleaned);
                             });
+                            this.lastUpdate = new Date().toLocaleString();
+
+                            // Guardar el CSV en el servidor
+                            this.saveCSVToServer(results.data);
+                        }
+                    });
+                },
+                async saveCSVToServer(data) {
+                    try {
+                        // Convertir datos de vuelta a CSV
+                        const csv = Papa.unparse(data);
+
+                        const response = await fetch('/api/upload-csv', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ data: csv })
+                        });
+
+                        if (response.ok) {
+                            console.log('CSV guardado exitosamente');
+                        } else {
+                            console.error('Error al guardar CSV');
+                        }
+                    } catch (error) {
+                        console.error('Error al guardar CSV:', error);
+                    }
+                },
+                loadSavedData() {
+                    Papa.parse('data.csv', {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            const raw = results.data;
+                            console.log('Raw CSV data (first row):', raw[0]);
+                            console.log('Available columns:', Object.keys(raw[0]));
+
+                            // Normaliza claves quitando espacios
+                            this.plans = raw.map(row => {
+                                const cleaned = {};
+                                Object.keys(row).forEach(k => {
+                                    cleaned[k.trim()] = row[k];
+                                });
+                                console.log('Cleaned row for symbol:', cleaned.Symbol, ':', cleaned);
+                                return this.calculatePlan(cleaned);
+                            });
+                            this.lastUpdate = new Date().toLocaleString();
                         }
                     });
                 },
