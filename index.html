@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Screener Autobot Planner</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="p-6">
+
+    <div id="app" class="max-w-7xl mx-auto">
+        <h1 class="text-2xl font-bold mb-6">Swing Autobot Trade Planner</h1>
+
+        <input type="file" @change="loadCSV" accept=".csv" class="mb-6">
+
+        <div v-if="plans.length">
+            <table class="min-w-full rounded-lg overflow-hidden text-sm border border-gray-400">
+                <thead>
+                    <tr>
+                        <th class="p-2 text-left border-b cursor-pointer" @click="sortBy('symbol')">
+                            Symbol <span v-if="sortKey === 'symbol'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+                        </th>
+                        <th class="p-2 text-right border-b cursor-pointer" @click="sortBy('score')">
+                            Score <span v-if="sortKey === 'score'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+                        </th>
+                        <th class="p-2 text-right border-b cursor-pointer" @click="sortBy('price')">
+                            Price <span v-if="sortKey === 'price'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+                        </th>
+                        <th class="p-2 text-right border-b cursor-pointer" @click="sortBy('entry')">
+                            Entry <span v-if="sortKey === 'entry'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+                        </th>
+                        <th class="p-2 text-right border-b cursor-pointer" @click="sortBy('stop')">
+                            Stop <span v-if="sortKey === 'stop'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+                        </th>
+                        <th class="p-2 text-right border-b cursor-pointer" @click="sortBy('target')">
+                            Target <span v-if="sortKey === 'target'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+                        </th>
+                        <th class="p-2 text-right border-b cursor-pointer" @click="sortBy('riskPercent')">
+                            Risk % <span v-if="sortKey === 'riskPercent'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+                        </th>
+                        <th class="p-2 text-right border-b cursor-pointer" @click="sortBy('rewardPercent')">
+                            Reward % <span v-if="sortKey === 'rewardPercent'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+                        </th>
+                        <th class="p-2 text-left border-b cursor-pointer" @click="sortBy('notes')">
+                            Notes <span v-if="sortKey === 'notes'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="p in sortedPlans" :key="p.symbol">
+                        <td class="p-2 border-b flex items-center">
+                            <span
+                                :style="{display: 'inline-block', width: '6px', height: '28px', 'border-radius': '3px', 'margin-right': '8px', background: getSetupColor(p.notes)}"></span>
+                            {{ p.symbol }}
+                        </td>
+                        <td class="p-2 text-right border-b">{{ p.score.toFixed(2) }}</td>
+                        <td class="p-2 text-right border-b">${{ p.price.toFixed(2) }}</td>
+                        <td class="p-2 text-right border-b">${{ p.entry.toFixed(2) }}</td>
+                        <td class="p-2 text-right border-b">${{ p.stop.toFixed(2) }}</td>
+                        <td class="p-2 text-right border-b">${{ p.target.toFixed(2) }}</td>
+                        <td class="p-2 text-right border-b">{{ p.riskPercent }}%</td>
+                        <td class="p-2 text-right border-b">{{ p.rewardPercent }}%</td>
+                        <td class="p-2 border-b">{{ p.notes }}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="mt-6 p-4 border rounded-lg text-sm">
+                <h3 class="font-bold mb-3">Cómo se calculan los valores:</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <h4 class="font-semibold mb-2">Precios de Trade:</h4>
+                        <ul class="space-y-1 text-xs">
+                            <li><strong>Entry:</strong> Dinámico según RSI y VWAP:</li>
+                            <li class="ml-3">- RSI &gt; 70 y precio &gt; VWAP: Pullback al VWAP + 0.2%</li>
+                            <li class="ml-3">- RSI &lt; 30: Precio actual + 0.5% (momentum)</li>
+                            <li class="ml-3">- RSI entre 30-70 y precio &gt; VWAP: VWAP + 0.2%</li>
+                            <li class="ml-3">- RSI entre 30-70 y precio &lt; VWAP: Precio actual + 0.3% (potencial
+                                reversión/breakout)</li>
+                            <li><strong>Stop:</strong> VWAP - (VWAP × ATR% × 0.5)</li>
+                            <li><strong>Target:</strong> Dinámico según ATR y RSI:</li>
+                            <li class="ml-3">- ATR &gt; 5 y RSI &lt; 70: Entry + (Risk × 2.0)</li>
+                            <li class="ml-3">- RSI &gt; 75 o ATR &lt; 2: Entry + (Risk × 1.0)</li>
+                            <li class="ml-3">- Si no, Entry + (Risk × 1.5)</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold mb-2">Risk &amp; Reward:</h4>
+                        <ul class="space-y-1 text-xs">
+                            <li><strong>Risk %:</strong> (Entry - Stop) / Entry × 100</li>
+                            <li><strong>Reward %:</strong> (Target - Entry) / Entry × 100</li>
+                            <li><strong>R/R Ratio:</strong> Reward% / Risk%</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold mb-2">Score (0-10):</h4>
+                        <ul class="space-y-1 text-xs">
+                            <li>+ Volatilidad 30m (×2)</li>
+                            <li>+ Performance 1W (×1.5)</li>
+                            <li>- ATR% (×1.2)</li>
+                            <li>+ EMA9 &gt; EMA21 (+2)</li>
+                            <li>± Earnings proximity</li>
+                            <li>± RSI levels</li>
+                            <li>± VWAP deviation</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-else class="mt-4">Sube un archivo CSV para generar los trades.</div>
+    </div>
+
+    <script>
+        const { createApp } = Vue
+
+        createApp({
+            data() {
+                return {
+                    plans: [],
+                    sortKey: 'score',
+                    sortDir: 'desc'
+                }
+            },
+            computed: {
+                sortedPlans() {
+                    return this.plans.slice().sort((a, b) => {
+                        let valA = a[this.sortKey];
+                        let valB = b[this.sortKey];
+                        // For numbers, compare as numbers
+                        if (!isNaN(parseFloat(valA)) && !isNaN(parseFloat(valB))) {
+                            valA = parseFloat(valA);
+                            valB = parseFloat(valB);
+                        } else {
+                            valA = valA ? valA.toString().toLowerCase() : '';
+                            valB = valB ? valB.toString().toLowerCase() : '';
+                        }
+                        if (valA < valB) return this.sortDir === 'asc' ? -1 : 1;
+                        if (valA > valB) return this.sortDir === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+            },
+            methods: {
+                sortBy(key) {
+                    if (this.sortKey === key) {
+                        this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.sortKey = key;
+                        this.sortDir = 'asc';
+                    }
+                },
+                loadCSV(event) {
+                    const file = event.target.files[0];
+                    Papa.parse(file, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            const raw = results.data;
+                            console.log('Raw CSV data (first row):', raw[0]);
+                            console.log('Available columns:', Object.keys(raw[0]));
+
+                            // Normaliza claves quitando espacios
+                            this.plans = raw.map(row => {
+                                const cleaned = {};
+                                Object.keys(row).forEach(k => {
+                                    cleaned[k.trim()] = row[k];
+                                });
+                                console.log('Cleaned row for symbol:', cleaned.Symbol, ':', cleaned);
+                                return this.calculatePlan(cleaned);
+                            });
+                        }
+                    });
+                },
+                calculatePlan(stock) {
+                    const get = (key) => {
+                        const value = parseFloat(stock[key] || 0) || 0;
+                        console.log(`Getting ${key}:`, stock[key], '-> parsed:', value);
+                        return value;
+                    };
+
+                    const symbol = stock.Symbol.trim();
+                    console.log('Processing symbol:', symbol);
+
+                    const price = get('Price');
+                    const vwap = get('Volume Weighted Average Price 1 day');
+                    const ema9 = get('Exponential Moving Average (9) 1 day');
+                    const ema21 = get('Exponential Moving Average (21) 1 day');
+                    const atr = get('Average True Range % (14) 1 day');
+                    const vol30 = get('Change from Open % 30 minutes');
+                    const rvol = get('Relative Volume 30 minutes');
+                    const rsi = get('Relative Strength Index (14) 1 week');
+                    const perf1w = get('Performance % 1 week');
+
+                    console.log('Key values for', symbol, ':', {
+                        price, vwap, ema9, ema21, atr, vol30, rvol, rsi, perf1w
+                    });
+
+                    // Earnings calc
+                    const earningsDate = new Date(stock['Upcoming earnings date']);
+                    const today = new Date();
+                    const daysToEarnings = Math.round((earningsDate - today) / (1000 * 60 * 60 * 24));
+
+                    // Dynamic entry calculation based on RSI + VWAP
+                    let entry;
+                    if (rsi > 70 && price > vwap) {
+                        entry = vwap * 1.002; // Pullback al VWAP + 0.2%
+                    } else if (rsi < 30) {
+                        entry = price * 1.005; // Precio actual + 0.5% (momentum)
+                    } else if (rsi >= 30 && rsi <= 70 && price > vwap) {
+                        entry = vwap * 1.002; // VWAP + 0.2%
+                    } else {
+                        entry = price * 1.003; // Precio actual + 0.3% (potencial reversión/breakout)
+                    }
+
+                    const stop = vwap - (vwap * (atr / 100) * 0.5);
+                    const risk = entry - stop;
+
+                    // Dynamic target calculation based on market conditions
+                    let targetMultiplier;
+                    if (atr > 5 && rsi < 70) {
+                        targetMultiplier = 2.0; // Volatilidad alta, no sobrecompra
+                    } else if (rsi > 75 || atr < 2) {
+                        targetMultiplier = 1.0; // Sobrecompra o baja volatilidad
+                    } else {
+                        targetMultiplier = 1.5; // Por defecto
+                    }
+                    const target = entry + (risk * targetMultiplier);
+
+                    const riskPercent = ((risk / entry) * 100).toFixed(2);
+                    const rewardPercent = (((target - entry) / entry) * 100).toFixed(2);
+
+                    console.log('Trade calculations for', symbol, ':', {
+                        entry, stop, risk, target, riskPercent, rewardPercent
+                    });
+
+                    // Scoring
+                    let score = 0;
+                    score += (vol30 / 100) * 2;
+                    score += (perf1w / 10) * 1.5;
+                    score -= atr * 1.2;
+                    score += (ema9 > ema21) ? 2 : 0;
+                    if (daysToEarnings < 7) score -= 3;
+                    else if (daysToEarnings < 14) score -= 1;
+                    else score += 1;
+                    if (rsi > 75) score -= 2;
+                    else if (rsi >= 55) score += 1;
+                    if (Math.abs((price - vwap) / vwap) > 0.02) score -= 1;
+                    else score += 1;
+
+                    console.log('Score calculation for', symbol, ':', score);
+
+                    // Evaluación integral del setup
+                    let setupQuality = this.evaluateSetup({
+                        score,
+                        riskPercent: parseFloat(riskPercent),
+                        rewardPercent: parseFloat(rewardPercent),
+                        daysToEarnings,
+                        rsi,
+                        atr,
+                        vol30,
+                        ema9,
+                        ema21,
+                        price,
+                        vwap
+                    });
+
+                    // Notes
+                    let notes = setupQuality.rating + ". ";
+                    if (daysToEarnings < 7) notes += "Earnings muy cerca. ";
+                    if (rsi > 75) notes += "Posible sobrecompra. ";
+                    if (atr > 5) notes += "Volatilidad alta. ";
+                    if (setupQuality.reasons.length > 0) {
+                        notes += setupQuality.reasons.join(" ");
+                    }
+
+                    const result = {
+                        symbol,
+                        price,
+                        score,
+                        entry,
+                        stop,
+                        target,
+                        riskPercent,
+                        rewardPercent,
+                        notes: notes.trim()
+                    };
+
+                    console.log('Final result for', symbol, ':', result);
+                    return result;
+                },
+                evaluateSetup(params) {
+                    const reasons = [];
+                    // Score
+                    if (params.score > 2) {
+                        var rating = "Setup excelente";
+                    } else if (params.score > 0.5) {
+                        var rating = "Setup bueno";
+                    } else {
+                        var rating = "Setup débil";
+                    }
+                    // Risk/Reward
+                    if (params.riskPercent > 6) reasons.push("Riesgo alto.");
+                    if (params.rewardPercent < 4) reasons.push("Poca recompensa.");
+                    if (params.rewardPercent / params.riskPercent < 1.2) reasons.push("R/R bajo.");
+                    // Earnings
+                    if (params.daysToEarnings < 7) reasons.push("Earnings muy cerca.");
+                    // Volatilidad
+                    if (params.atr > 5) reasons.push("ATR alto.");
+                    // RSI
+                    if (params.rsi > 75) reasons.push("RSI sobrecompra.");
+                    if (params.rsi < 30) reasons.push("RSI sobreventa.");
+                    return { rating, reasons };
+                },
+                getSetupColor(notes) {
+                    if (notes.startsWith('Setup excelente')) {
+                        return '#22c55e'; // verde
+                    } else if (notes.startsWith('Setup bueno')) {
+                        return '#eab308'; // amarillo
+                    } else {
+                        return '#ef4444'; // rojo
+                    }
+                }
+            }
+        }).mount('#app')
+    </script>
+
+</body>
+
+</html>
