@@ -55,7 +55,8 @@
                         <td class="p-2 border-b flex items-center">
                             <span
                                 :style="{display: 'inline-block', width: '6px', height: '28px', 'border-radius': '3px', 'margin-right': '8px', background: getSetupColor(p.notes)}"></span>
-                            {{ p.symbol }}
+                            <a :href="`https://robinhood.com/stocks/${p.symbol}`" target="_blank"
+                                class="hover:underline cursor-pointer">{{ p.symbol }}</a>
                         </td>
                         <td class="p-2 text-right border-b">{{ p.score.toFixed(2) }}</td>
                         <td class="p-2 text-right border-b">${{ p.price.toFixed(2) }}</td>
